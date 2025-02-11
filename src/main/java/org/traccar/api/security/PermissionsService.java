@@ -16,6 +16,7 @@
 package org.traccar.api.security;
 
 import com.google.inject.servlet.RequestScoped;
+import org.traccar.model.Account;
 import org.traccar.model.BaseModel;
 import org.traccar.model.Calendar;
 import org.traccar.model.Command;
@@ -206,6 +207,18 @@ public class PermissionsService {
         if (before.getFixedEmail() && !before.getEmail().equals(after.getEmail())) {
             checkAdmin(userId);
         }
+        if (before.getId() > 0) {
+            checkUser(userId, before.getId());
+        } else {
+            checkRestriction(userId, UserRestrictions::getReadonly);
+            // Check if user has permission to assign the account
+            if (!getUser(userId).getAdministrator()) {
+                // Non-admin users can only create users in their own account
+                if (after.getAccountId() != getUser(userId).getAccountId()) {
+                    throw new SecurityException("Account assignment denied");
+                }
+            }
+        }
     }
 
     public <T extends BaseModel> void checkPermission(
@@ -220,6 +233,23 @@ public class PermissionsService {
             if (object == null) {
                 throw new SecurityException(clazz.getSimpleName() + " access denied");
             }
+        }
+    }
+
+    public void checkAccount(long userId, long accountId) throws StorageException, SecurityException {
+        User user = getUser(userId);
+        if (!user.getAdministrator()) {
+            if (user.getAccountId() != accountId) {
+                throw new SecurityException("Account access denied");
+            }
+        }
+    }
+
+    public void checkAccountEdit(long userId, Account account) throws StorageException, SecurityException {
+        User user = getUser(userId);
+        if (!user.getAdministrator()) {
+            // Only sysadmin can manage accounts
+            throw new SecurityException("Account management denied");
         }
     }
 

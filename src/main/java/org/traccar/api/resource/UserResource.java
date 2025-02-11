@@ -66,18 +66,32 @@ public class UserResource extends BaseObjectResource<User> {
 
     @GET
     public Collection<User> get(
-            @QueryParam("userId") long userId, @QueryParam("deviceId") long deviceId) throws StorageException {
+            @QueryParam("userId") long userId,
+            @QueryParam("deviceId") long deviceId,
+            @QueryParam("accountId") long accountId) throws StorageException {
         var conditions = new LinkedList<Condition>();
+        
+        // Handle account-based filtering
+        if (accountId > 0) {
+            permissionsService.checkAccount(getUserId(), accountId);
+            conditions.add(new Condition.Equals("accountId", accountId));
+        } else if (!permissionsService.getUser(getUserId()).getAdministrator()) {
+            // Non-admin users can only see users in their account
+            conditions.add(new Condition.Equals("accountId", permissionsService.getUser(getUserId()).getAccountId()));
+        }
+
         if (userId > 0) {
             permissionsService.checkUser(getUserId(), userId);
             conditions.add(new Condition.Permission(User.class, userId, ManagedUser.class).excludeGroups());
         } else if (permissionsService.notAdmin(getUserId())) {
             conditions.add(new Condition.Permission(User.class, getUserId(), ManagedUser.class).excludeGroups());
         }
+        
         if (deviceId > 0) {
             permissionsService.checkManager(getUserId());
             conditions.add(new Condition.Permission(User.class, Device.class, deviceId).excludeGroups());
         }
+
         return storage.getObjects(baseClass, new Request(
                 new Columns.All(), Condition.merge(conditions), new Order("name")));
     }
@@ -87,6 +101,22 @@ public class UserResource extends BaseObjectResource<User> {
     @POST
     public Response add(User entity) throws StorageException {
         User currentUser = getUserId() > 0 ? permissionsService.getUser(getUserId()) : null;
+        
+        // Set default account for new users
+        if (entity.getAccountId() == 0 && currentUser != null) {
+            if (!currentUser.getAdministrator()) {
+                entity.setAccountId(currentUser.getAccountId());
+            } else {
+                // Admin creating user without specified account - use default manager account
+                Account defaultAccount = storage.getObject(Account.class, new Request(
+                    new Columns.All(),
+                    new Condition.Equals("type", Account.AccountType.MANAGER.toString())));
+                if (defaultAccount != null) {
+                    entity.setAccountId(defaultAccount.getId());
+                }
+            }
+        }
+
         if (currentUser == null || !currentUser.getAdministrator()) {
             permissionsService.checkUserUpdate(getUserId(), new User(), entity);
             if (currentUser != null && currentUser.getUserLimit() != 0) {
@@ -115,9 +145,12 @@ public class UserResource extends BaseObjectResource<User> {
         }
 
         entity.setId(storage.addObject(entity, new Request(new Columns.Exclude("id"))));
-        storage.updateObject(entity, new Request(
-                new Columns.Include("hashedPassword", "salt"),
-                new Condition.Equals("id", entity.getId())));
+        
+        if (entity.getHashedPassword() != null && entity.getSalt() != null) {
+            storage.updateObject(entity, new Request(
+                    new Columns.Include("hashedPassword", "salt"),
+                    new Condition.Equals("id", entity.getId())));
+        }
 
         LogAction.create(getUserId(), entity);
 
@@ -125,6 +158,7 @@ public class UserResource extends BaseObjectResource<User> {
             storage.addPermission(new Permission(User.class, getUserId(), ManagedUser.class, entity.getId()));
             LogAction.link(getUserId(), User.class, getUserId(), ManagedUser.class, entity.getId());
         }
+        
         return Response.ok(entity).build();
     }
 

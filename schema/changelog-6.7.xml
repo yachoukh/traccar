@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.4.xsd">
+
+    <changeSet author="author" id="accounts-1">
+
+        <createTable tableName="tc_accounts">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" />
+            </column>
+            <column name="name" type="VARCHAR(128)">
+                <constraints nullable="false" />
+            </column>
+            <column name="type" type="VARCHAR(128)">
+                <constraints nullable="false" />
+            </column>
+            <column name="disabled" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false" />
+            </column>
+            <column name="attributes" type="VARCHAR(4000)">
+                <constraints nullable="false" />
+            </column>
+        </createTable>
+
+        <addColumn tableName="tc_users">
+            <column name="accountid" type="INT" defaultValue="null">
+                <constraints foreignKeyName="fk_user_account" references="tc_accounts(id)" deleteCascade="true" />
+            </column>
+        </addColumn>
+
+        <!-- Create initial sysadmin account -->
+        <insert tableName="tc_accounts">
+            <column name="name" value="System Administrator"/>
+            <column name="type" value="SYSADMIN"/>
+            <column name="disabled" valueBoolean="false"/>
+            <column name="attributes" value="{}"/>
+        </insert>
+
+        <!-- Create a default manager account -->
+        <insert tableName="tc_accounts">
+            <column name="name" value="Default Manager Account"/>
+            <column name="type" value="MANAGER"/>
+            <column name="disabled" valueBoolean="false"/>
+            <column name="attributes" value="{}"/>
+        </insert>
+
+        <!-- Associate existing admin users with sysadmin account -->
+        <sql>
+            UPDATE tc_users SET accountid = (
+                SELECT id FROM tc_accounts WHERE type = 'SYSADMIN'
+            ) WHERE administrator = true;
+        </sql>
+
+        <!-- Associate remaining users with manager account -->
+        <sql>
+            UPDATE tc_users SET accountid = (
+                SELECT id FROM tc_accounts WHERE type = 'MANAGER'
+            ) WHERE accountid IS NULL;
+        </sql>
+
+        <!-- Make accountid non-nullable after migration -->
+        <addNotNullConstraint tableName="tc_users" columnName="accountid"/>
+
+        <!-- Account Attributes table -->
+        <createTable tableName="tc_account_attributes">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" />
+            </column>
+            <column name="name" type="VARCHAR(128)">
+                <constraints nullable="false" />
+            </column>
+            <column name="value" type="VARCHAR(4000)">
+                <constraints nullable="false" />
+            </column>
+            <column name="accountid" type="INT">
+                <constraints nullable="false" foreignKeyName="fk_account_attribute_accountid" references="tc_accounts(id)" deleteCascade="true"/>
+            </column>
+            <column name="type" type="VARCHAR(128)">
+                <constraints nullable="false" />
+            </column>
+            <column name="attributes" type="VARCHAR(4000)">
+                <constraints nullable="false" />
+            </column>
+        </createTable>
+
+        <addUniqueConstraint tableName="tc_account_attributes" columnNames="accountid,name" constraintName="uk_account_attribute"/>
+
+    </changeSet>
+
+</databaseChangeLog>

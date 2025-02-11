@@ -263,6 +263,16 @@ public class User extends ExtendedModel implements UserRestrictions, Disableable
         this.temporary = temporary;
     }
 
+    private long accountId;
+
+    public long getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(long accountId) {
+        this.accountId = accountId;
+    }
+
     @QueryIgnore
     public String getPassword() {
         return null;
